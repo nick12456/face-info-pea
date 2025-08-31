@@ -3,15 +3,13 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Face Recognizer PWA</title>
-<link rel="manifest" href="/manifest.webmanifest">
-<meta name="theme-color" content="#0b0b0c" />
+<title>Face Recognizer with Emotions</title>
 <style>
   body{margin:0;background:#0b0b0c;color:#fff;font-family:sans-serif;text-align:center}
   video,canvas{width:100%;max-width:480px;border-radius:8px;margin-top:10px}
   #controls{margin:10px}
   input,button{padding:8px 12px;margin:4px;border-radius:6px;border:1px solid #444}
-  #status{margin-top:10px}
+  #status{margin-top:10px;white-space:pre-line}
 </style>
 </head>
 <body>
@@ -35,6 +33,20 @@ const statusBox=document.getElementById("status");
 let known=JSON.parse(localStorage.getItem("faces-db")||"{}");
 const MATCH_THRESHOLD=0.58;
 
+const motivationalLines = [
+  "Keep pushing forward 🚀",
+  "Your smile lights up the day ✨",
+  "Stay strong, you’re doing great 💪",
+  "Every moment is a new chance 🌟",
+  "You’ve got this 🔥",
+  "Confidence suits you well 😎",
+  "Stay positive and unstoppable 🌈"
+];
+
+function randomMotivation(){
+  return motivationalLines[Math.floor(Math.random()*motivationalLines.length)];
+}
+
 async function startCamera(){
   const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:"user"}});
   video.srcObject=stream; await video.play();
@@ -56,20 +68,21 @@ async function captureDescriptor(){
   const opts=new faceapi.TinyFaceDetectorOptions({inputSize:160});
   const det=await faceapi.detectSingleFace(video,opts).withFaceLandmarks().withFaceDescriptor().withAgeAndGender().withFaceExpressions();
   if(!det){statusBox.innerText="No face detected";return null;}
-  const d=det.descriptor;
   drawOverlay(det);
-  return {descriptor:d, age:det.age, gender:det.gender, expr:det.expressions};
+  return {descriptor:det.descriptor, age:Math.round(det.age), gender:det.gender, expr:det.expressions};
 }
 
 function drawOverlay(det){
   ctx.drawImage(video,0,0,canvas.width,canvas.height);
   const {x,y,width,height}=det.detection.box;
   ctx.strokeStyle="cyan"; ctx.lineWidth=2; ctx.strokeRect(x,y,width,height);
-  // top emotion
-  const exprs=det.expressions; let best=""; let v=0;
-  for(const k in exprs){if(exprs[k]>v){best=k;v=exprs[k];}}
-  ctx.fillStyle="black"; ctx.fillRect(x,y-20,120,18);
-  ctx.fillStyle="white"; ctx.fillText(best+" "+v.toFixed(2),x+4,y-6);
+
+  // Show ALL expressions with % values
+  ctx.font="12px sans-serif"; ctx.fillStyle="black"; ctx.fillRect(x,y-90,160,80);
+  ctx.fillStyle="white"; let offset=0;
+  for(const [emo,val] of Object.entries(det.expressions)){
+    ctx.fillText(`${emo}: ${(val*100).toFixed(1)}%`,x+4,y-75+offset); offset+=12;
+  }
 }
 
 async function enroll(){
@@ -79,7 +92,7 @@ async function enroll(){
   if(!known[name]) known[name]=[];
   known[name].push(Array.from(res.descriptor));
   localStorage.setItem("faces-db",JSON.stringify(known));
-  statusBox.innerText=`Enrolled ${name} (${known[name].length} samples)`;
+  statusBox.innerText=`Enrolled ${name} (${known[name].length} samples)\nAge:${res.age}, Gender:${res.gender}\nMotivation: ${randomMotivation()}`;
 }
 
 async function verify(){
@@ -89,7 +102,7 @@ async function verify(){
   const dists=known[name].map(v=>dist(res.descriptor,Float32Array.from(v)));
   const min=Math.min(...dists);
   if(min<MATCH_THRESHOLD){
-    statusBox.innerText=`✅ Verified as ${name} | mood:${topEmotion(res.expr)} `;
+    statusBox.innerText=`✅ Verified as ${name}\nAge:${res.age}, Gender:${res.gender}\nTop emotion: ${topEmotion(res.expr)}\nMotivation: ${randomMotivation()}`;
   }else{
     statusBox.innerText=`❌ Face does not match ${name}`;
   }
