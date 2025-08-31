@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+<title>Face Info – PWA (No Key, No Icon)</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="theme-color" content="#0b0b0c" />
+<style>
+  body{margin:0;background:#0b0b0c;color:#fff;font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter}
+  video,canvas{position:fixed;inset:0;width:100%;height:100%;object-fit:cover}
+  #status{position:fixed;top:10px;left:10px;background:#0008;padding:6px 10px;border-radius:8px}
+  #message{position:fixed;bottom:10px;left:10px;right:10px;background:#000c;padding:10px;border-radius:8px;min-height:30px}
+</style>
+</head>
+<body>
+  <video id="video" autoplay playsinline muted></video>
+  <canvas id="canvas"></canvas>
+  <div id="status">Loading…</div>
+  <div id="message">🤖 Waiting…</div>
+
+  <!-- Face API -->
+  <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.min.js"></script>
+  <script>
+  const MODEL_URL="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/";
+  const video=document.getElementById("video");
+  const statusBox=document.getElementById("status");
+  const msgBox=document.getElementById("message");
+
+  // Register service worker
+  if('serviceWorker' in navigator){
+    window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js'));
+  }
+
+  async function startCamera(){
+    try{
+      const stream=await navigator.mediaDevices.getUserMedia({
+        video:{facingMode:"user",width:{ideal:640},height:{ideal:480}}
+      });
+      video.srcObject=stream; await video.play();
+    }catch(e){
+      statusBox.innerText="Camera error: "+e.message+" (use HTTPS & allow camera)";
+    }
+  }
+
+  async function loadModels(){
+    await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
+    await faceapi.nets.ageGenderNet.loadFromUri(MODEL_URL);
+    await faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL);
+    statusBox.innerText="✅ Models loaded";
+  }
+
+  function localMessage({age,gender,emotion}){
+    const mood={
+      happy:"You look cheerful today!",
+      sad:"Cheer up, tomorrow will be brighter.",
+      angry:"Take a deep breath, stay calm.",
+      neutral:"Looking steady and composed.",
+      surprised:"Wow, something surprised you!",
+      fearful:"Stay strong, all is okay.",
+      disgusted:"Hmm, not impressed right now."
+    };
+    return `${age}-year-old ${gender}, ${mood[emotion]||"Nice to see you!"}`;
+  }
+
+  async function runLoop(){
+    const opts=new faceapi.TinyFaceDetectorOptions({inputSize:160,scoreThreshold:0.5});
+    setInterval(async()=>{
+      try{
+        const res=await faceapi.detectSingleFace(video,opts)
+          .withAgeAndGender().withFaceExpressions();
+        if(res){
+          const age=Math.round(res.age);
+          const gender=res.gender;
+          const exprs=res.expressions||{};
+          let topE="",topV=0;
+          for(const k in exprs){ if(exprs[k]>topV){ topE=k; topV=exprs[k]; } }
+          statusBox.innerText=`Detected: age ${age}, ${gender}, mood ${topE}`;
+          msgBox.innerText="🤖 "+localMessage({age,gender,emotion:topE});
+        }
+      }catch(e){}
+    },3000);
+  }
+
+  (async()=>{
+    await startCamera();
+    await loadModels();
+    runLoop();
+  })();
+  </script>
+</body>
+</html>
